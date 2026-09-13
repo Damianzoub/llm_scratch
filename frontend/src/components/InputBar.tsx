@@ -8,9 +8,87 @@ type Attachment = {
   previewUrl: string | null;
 };
 
+type VoiceState = "idle" | "recording" | "processing" | "error";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 export default function InputBar() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  async function startRecording() {
+    setVoiceError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+
+      recorder.onstop = () => {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        void sendVoiceMessage(audioBlob);
+      };
+
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setVoiceState("recording");
+    } catch {
+      setVoiceState("error");
+      setVoiceError("Microphone access denied or unavailable.");
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+  }
+
+  function handleMicClick() {
+    if (voiceState === "recording") {
+      stopRecording();
+    } else if (voiceState !== "processing") {
+      void startRecording();
+    }
+  }
+
+  async function sendVoiceMessage(audioBlob: Blob) {
+    setVoiceState("processing");
+    try {
+      const formData = new FormData();
+      formData.append("audio", audioBlob, "voice-message.webm");
+
+      const response = await fetch(`${API_URL}/voice`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Voice request failed: ${response.status}`);
+      }
+
+      // TODO: once the /voice endpoint (Pipecat) is implemented, wire the
+      // returned transcript/response into the chat message list here.
+      setVoiceState("idle");
+    } catch {
+      setVoiceState("error");
+      setVoiceError("Couldn't reach the voice service. Try again.");
+    }
+  }
 
   function handleFilesSelected(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -97,6 +175,20 @@ export default function InputBar() {
           />
 
           <button
+            onClick={handleMicClick}
+            disabled={voiceState === "processing"}
+            aria-label={voiceState === "recording" ? "Stop recording" : "Record voice message"}
+            aria-pressed={voiceState === "recording"}
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-40 ${
+              voiceState === "recording"
+                ? "bg-red-500 text-white"
+                : "text-foreground hover:bg-surface-hover"
+            }`}
+          >
+            {voiceState === "processing" ? <SpinnerIcon /> : <MicIcon />}
+          </button>
+
+          <button
             disabled
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-background disabled:opacity-40"
             aria-label="Send message"
@@ -104,6 +196,10 @@ export default function InputBar() {
             <SendIcon />
           </button>
         </div>
+
+        {voiceError && (
+          <p className="mt-2 text-center text-xs text-red-500">{voiceError}</p>
+        )}
       </div>
       <p className="mx-auto mt-2 max-w-3xl text-center text-xs text-muted">
         This is a UI shell — sending isn&apos;t wired up yet.
@@ -132,6 +228,32 @@ function CloseIcon() {
   return (
     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
       <path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1" strokeLinecap="round" />
+      <path d="M12 18v4M9 22h6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className="animate-spin"
+    >
+      <path d="M12 2a10 10 0 1 0 10 10" strokeLinecap="round" />
     </svg>
   );
 }
