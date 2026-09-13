@@ -1,0 +1,20 @@
+# RAG Offline Pipeline — High Level
+
+personal_docs: "Personal Docs\n(bio, projects, preferences)" {
+  shape: page
+}
+
+load: "Load"
+chunk: "Chunk"
+embed: "Embed"
+store: "Store"
+
+searchable_index: "Searchable Index" {
+  shape: cylinder
+}
+
+personal_docs -> load
+load -> chunk
+chunk -> embed
+embed -> store
+store -> searchable_index

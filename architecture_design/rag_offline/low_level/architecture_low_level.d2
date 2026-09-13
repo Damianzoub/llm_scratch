@@ -1,0 +1,57 @@
+# RAG Offline (Indexing) Pipeline — Low Level
+
+config_llamaindex: {
+  llm: "Ollama / OpenAI"
+  embed_model: "Ollama / OpenAI Embedding"
+}
+
+load_data: {
+  required_docs: "md, txt, pdf, docx"
+}
+
+docstore: "SimpleDocumentStore" {
+  shape: cylinder
+}
+
+chunking: {
+  is_structured
+  short_path: "append directly to nodes_index"
+  long_path: "split parent into children\n(IndexNode, index_id=parent.node_id)"
+}
+
+vector_index: {
+  build_index: "VectorStoreIndex(nodes, storage_context)"
+}
+
+qdrant: "Qdrant (local, ./qdrant_data)" {
+  shape: cylinder
+}
+
+index_ready: "index (returned)"
+
+# --- Flow ---
+
+config_llamaindex -> load_data
+
+load_data -> chunking: "list[Document]"
+
+chunking.is_structured -> chunking.short_path: "< MAX_LENGTH"
+chunking.is_structured -> chunking.long_path: ">= MAX_LENGTH"
+
+# Long path writes the parent into the shared docstore
+chunking.long_path -> docstore: "add_documents([parent])"
+
+# Both paths flow into the nodes list passed to indexing
+chunking.short_path -> vector_index.build_index: "nodes"
+chunking.long_path -> vector_index.build_index: "nodes (IndexNodes)"
+
+# Indexing needs the SAME docstore instance for StorageContext
+docstore -> vector_index.build_index: "StorageContext(docstore=...)"
+
+# Embedding happens inside build_index, using the configured embed_model
+config_llamaindex.embed_model -> vector_index.build_index: "embeds each node"
+
+# Result gets stored in Qdrant
+vector_index.build_index -> qdrant: "stores vectors"
+
+vector_index.build_index -> index_ready
