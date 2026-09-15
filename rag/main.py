@@ -14,6 +14,7 @@ def run_pipeline():
     return index
 
 if __name__ == "__main__":
-    run_pipeline()
+    index = run_pipeline()
     print("Index built successfully")
+    index.storage_context.vector_store.client.close()  # explicit cleanup, avoids the __del__ race
 

@@ -24,7 +24,7 @@ def config_LlamaIndex():
             model="text-embedding-3-small",
             embed_batch_size=233,
             dimensions=3,
-            api_key="OPENAI_API_KEY",
+            api_key=OPENAI_API_KEY,
             callback_manager=CallbackManager()
         )
     else:
