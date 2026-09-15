@@ -1,0 +1,53 @@
+# RAG Online (Query/Retrieval) Pipeline — Low Level
+
+user_query: "User Query" {
+  shape: person
+}
+
+hyde: {
+  rewrite: "hyde()\nbuild rephrase prompt"
+  llm_call_1: "Settings.llm.complete(prompt)"
+}
+
+recursive_retriever: {
+  base_retriever: "index.as_retriever(similarity_top_k=10)"
+  resolve: "RecursiveRetriever\nresolves IndexNode -> nodes_dict[index_id]"
+}
+
+qdrant: "Qdrant (via VectorStoreIndex)" {
+  shape: cylinder
+}
+
+nodes_dict: "nodes_dict\n(parent lookup, built offline)" {
+  shape: cylinder
+}
+
+reranker: {
+  llm_call_2: "LLMRerank(llm=Settings.llm, top_n=3)"
+}
+
+query_engine: {
+  build: "RetrieverQueryEngine.from_args(\nretriever, node_postprocessors=[reranker],\nstreaming=True)"
+  llm_call_3: "Settings.llm generates final answer"
+}
+
+response: "Streaming Response" {
+  shape: page
+}
+
+# --- Flow ---
+
+user_query -> hyde.rewrite
+hyde.rewrite -> hyde.llm_call_1
+hyde.llm_call_1 -> recursive_retriever.base_retriever: "optimised_query"
+
+recursive_retriever.base_retriever -> qdrant: "similarity search, top_k=10"
+qdrant -> recursive_retriever.resolve: "candidate nodes\n(may include IndexNodes)"
+recursive_retriever.resolve -> nodes_dict: "lookup index_id"
+nodes_dict -> recursive_retriever.resolve: "resolved parent content"
+
+recursive_retriever.resolve -> reranker.llm_call_2: "up to 10 nodes"
+reranker.llm_call_2 -> query_engine.build: "top 3 reranked nodes"
+
+query_engine.build -> query_engine.llm_call_3
+query_engine.llm_call_3 -> response

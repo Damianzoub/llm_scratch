@@ -1,0 +1,27 @@
+User_Query:{
+    shape: person
+}
+
+Pre_Retrieval{
+
+}
+
+Retrieval{
+
+}
+
+Post_Retrieval{
+
+}
+
+Synthesis{
+
+}
+
+LLM: "answer"
+
+User_Query -> Pre_Retrieval
+Pre_Retrieval -> Retrieval
+Retrieval -> Post_Retrieval
+Post_Retrieval -> Synthesis
+Synthesis -> LLM
